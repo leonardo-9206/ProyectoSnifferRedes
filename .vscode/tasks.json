@@ -4,7 +4,7 @@
         {
             "type": "cppbuild",
             "label": "Compilar Sniffer",
-            "command": "g++",
+            "command": "C:/msys64/ucrt64/bin/g++.exe",
             "args": [
                 "-g",
                 "-std=c++17",

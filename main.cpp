@@ -186,79 +186,7 @@ static void renderHex(const vector<uint8_t>& data) {
     buf[pos] = '\0';
 
     ImGui::InputTextMultiline("##hex", buf, sizeof(buf),
-        ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
-}
-
-// ─── Vista de árbol con detalles del paquete ─────────────────────────────────
-static void renderDetalles(const PaqueteMeta& meta, const vector<uint8_t>& raw) {
-    if (raw.size() < 14) { ImGui::TextDisabled("Paquete demasiado corto"); return; }
-
-    // ── Ethernet II ──
-    if (ImGui::TreeNodeEx("Ethernet II", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Text("Dst MAC : %02X:%02X:%02X:%02X:%02X:%02X",
-                    raw[0],raw[1],raw[2],raw[3],raw[4],raw[5]);
-        ImGui::Text("Src MAC : %02X:%02X:%02X:%02X:%02X:%02X",
-                    raw[6],raw[7],raw[8],raw[9],raw[10],raw[11]);
-        ImGui::Text("EtherType: 0x%02X%02X", raw[12], raw[13]);
-        ImGui::TreePop();
-    }
-
-    if (raw.size() < 34) return;
-    auto* ih  = (ip_header*)(raw.data() + 14);
-    u_int ihl = (ih->ver_ihl & 0xf) * 4;
-
-    // ── IPv4 ──
-    if (ImGui::TreeNodeEx("IPv4", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Text("Version       : %d",       ih->ver_ihl >> 4);
-        ImGui::Text("Header Length : %d bytes", ihl);
-        ImGui::Text("TOS           : 0x%02X",   ih->tos);
-        ImGui::Text("Total Length  : %d",        ntohs(ih->tlen));
-        ImGui::Text("TTL           : %d",        ih->ttl);
-        ImGui::Text("Protocolo     : %d (%s)",   ih->proto, meta.protocolo.c_str());
-        ImGui::Text("Src IP        : %s",        meta.ip_origen.c_str());
-        ImGui::Text("Dst IP        : %s",        meta.ip_destino.c_str());
-        ImGui::TreePop();
-    }
-
-    // ── TCP ──
-    if (ih->proto == 6 && raw.size() >= 14u + ihl + 20u) {
-        auto* th = (tcp_header*)(raw.data() + 14 + ihl);
-        if (ImGui::TreeNodeEx("TCP", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Src Port : %d", ntohs(th->sport));
-            ImGui::Text("Dst Port : %d  (%s)", ntohs(th->dport), meta.servicio.c_str());
-            ImGui::Text("Seq      : %u", ntohl(th->seq));
-            ImGui::Text("Ack      : %u", ntohl(th->ack));
-            ImGui::Text("Flags    : 0x%02X  [%s%s%s%s%s%s]",
-                th->flags,
-                (th->flags & 0x02) ? "SYN " : "",
-                (th->flags & 0x10) ? "ACK " : "",
-                (th->flags & 0x01) ? "FIN " : "",
-                (th->flags & 0x04) ? "RST " : "",
-                (th->flags & 0x08) ? "PSH " : "",
-                (th->flags & 0x20) ? "URG " : "");
-            ImGui::Text("Window   : %d", ntohs(th->window));
-            ImGui::TreePop();
-        }
-    }
-    // ── UDP ──
-    else if (ih->proto == 17 && raw.size() >= 14u + ihl + 8u) {
-        auto* uh = (udp_header*)(raw.data() + 14 + ihl);
-        if (ImGui::TreeNodeEx("UDP", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Src Port  : %d", ntohs(uh->sport));
-            ImGui::Text("Dst Port  : %d  (%s)", ntohs(uh->dport), meta.servicio.c_str());
-            ImGui::Text("Length    : %d", ntohs(uh->len));
-            ImGui::Text("Checksum  : 0x%04X", ntohs(uh->crc));
-            ImGui::TreePop();
-        }
-    }
-    // ── ICMP ──
-    else if (ih->proto == 1 && raw.size() >= 14u + ihl + 4u) {
-        if (ImGui::TreeNodeEx("ICMP", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Type : %d", raw[14 + ihl]);
-            ImGui::Text("Code : %d", raw[14 + ihl + 1]);
-            ImGui::TreePop();
-        }
-    }
+        ImVec2(800, 400), ImGuiInputTextFlags_ReadOnly);
 }
 
 // ─── Exportar CSV ─────────────────────────────────────────────────────────────
@@ -339,6 +267,13 @@ int main() {
     thread hilo_cap;
     bool   exportado   = false;
 
+    // Estado para modal Hex
+    bool open_hex_modal = false;
+    vector<uint8_t> hex_raw_data;
+
+    // Estado para modal Filtros
+    bool open_filtros_modal = false;
+
     // ── Render loop ───────────────────────────────────────────────────────────
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -349,14 +284,18 @@ int main() {
         // Ventana que ocupa toda la pantalla
         ImGui::SetNextWindowPos({0, 0});
         ImGui::SetNextWindowSize(io.DisplaySize);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
         ImGui::Begin("##root", nullptr,
             ImGuiWindowFlags_NoDecoration    | ImGuiWindowFlags_NoMove         |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-        // ── BARRA DE CONTROLES ────────────────────────────────────────────────
-        ImGui::Text("Interfaz:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(380);
+        ImGui::TextUnformatted("MONITOR DE RED SIMPLE");
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::Spacing();
+
+        ImGui::Text("1. Selecciona tu conexión a Internet:");
+        ImGui::SetNextItemWidth(400);
         if (!iface_descs.empty()) {
             vector<const char*> ptrs;
             for (auto& s : iface_descs) ptrs.push_back(s.c_str());
@@ -367,22 +306,14 @@ int main() {
             ImGui::TextColored({1, 0.4f, 0.4f, 1}, "No se encontraron interfaces.");
         }
 
-        ImGui::SameLine();
-        ImGui::Text("Filtro BPF:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(200);
-        if (g_capturando) ImGui::BeginDisabled();
-        ImGui::InputText("##filtro", filtro_buf, sizeof(filtro_buf));
-        if (g_capturando) ImGui::EndDisabled();
-        ImGui::SameLine();
-        ImGui::TextDisabled("(ej: tcp port 443)");
+        ImGui::Spacing();
+        ImGui::Spacing();
 
-        // Botones Iniciar / Detener
-        ImGui::SameLine(0, 20);
+        // Botones gigantes
         if (!g_capturando) {
-            ImGui::PushStyleColor(ImGuiCol_Button,        {0.15f, 0.55f, 0.15f, 1.0f});
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f, 0.75f, 0.20f, 1.0f});
-            if (ImGui::Button("  Iniciar  ") && !iface_names.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Button,        {0.15f, 0.65f, 0.15f, 1.0f});
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f, 0.85f, 0.20f, 1.0f});
+            if (ImGui::Button("INICIAR MONITOR", ImVec2(200, 50)) && !iface_names.empty()) {
                 sel_paquete = -1;
                 cached_idx  = -1;
                 exportado   = false;
@@ -393,16 +324,21 @@ int main() {
             }
             ImGui::PopStyleColor(2);
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Button,        {0.65f, 0.15f, 0.15f, 1.0f});
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.85f, 0.20f, 0.20f, 1.0f});
-            if (ImGui::Button("  Detener  ")) {
+            ImGui::PushStyleColor(ImGuiCol_Button,        {0.85f, 0.15f, 0.15f, 1.0f});
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {1.00f, 0.20f, 0.20f, 1.0f});
+            if (ImGui::Button("DETENER MONITOR", ImVec2(200, 50))) {
                 if (g_handle) pcap_breakloop(g_handle);
             }
             ImGui::PopStyleColor(2);
         }
 
-        ImGui::SameLine(0, 10);
-        if (ImGui::Button("Exportar CSV")) {
+        ImGui::SameLine(0, 20);
+        if (ImGui::Button("Ver Filtros", ImVec2(200, 50))) {
+            open_filtros_modal = true;
+        }
+
+        ImGui::SameLine(0, 20);
+        if (ImGui::Button("Guardar Reporte (.csv)", ImVec2(200, 50))) {
             if (exportarCSV(csv_path)) exportado = true;
         }
         if (exportado) {
@@ -410,116 +346,92 @@ int main() {
             ImGui::TextColored({0.3f, 1.0f, 0.3f, 1.0f}, "Guardado en %s", csv_path);
         }
 
-        // Indicador de estado
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
         size_t n_paquetes;
-        { lock_guard<mutex> lk(g_mtx); n_paquetes = g_meta.size(); }
-        ImGui::SameLine(0, 30);
-        if (g_capturando)
-            ImGui::TextColored({0.3f, 1.0f, 0.3f, 1.0f}, "● Capturando  [%zu paquetes]", n_paquetes);
-        else
-            ImGui::TextColored({0.5f, 0.5f, 0.5f, 1.0f}, "■ Detenido    [%zu paquetes]", n_paquetes);
-
-        ImGui::Separator();
-
-        // ── LAYOUT DE TRES PANELES ────────────────────────────────────────────
-        float avail_h = ImGui::GetContentRegionAvail().y;
-        float avail_w = ImGui::GetContentRegionAvail().x;
-        float top_h   = avail_h * 0.48f;
-        float bot_h   = avail_h * 0.52f - ImGui::GetStyle().ItemSpacing.y;
-        float half_w  = (avail_w - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-
-        // Snapshot liviano de metadatos (sin raw_data)
         vector<PaqueteMeta> snap;
-        { lock_guard<mutex> lk(g_mtx); snap = g_meta; }
+        { lock_guard<mutex> lk(g_mtx); snap = g_meta; n_paquetes = g_meta.size(); }
 
-        // ── PANEL 1: Tabla de paquetes ────────────────────────────────────────
-        ImGui::BeginChild("##tabla", {0, top_h}, true);
-        ImGui::TextDisabled("Paquetes capturados");
-        ImGui::Separator();
-
-        if (ImGui::BeginTable("tbl", 7,
-            ImGuiTableFlags_Borders           | ImGuiTableFlags_RowBg           |
-            ImGuiTableFlags_ScrollY           | ImGuiTableFlags_Resizable       |
-            ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_HighlightHoveredColumn))
-        {
-            ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("#",           ImGuiTableColumnFlags_WidthFixed,   55.0f);
-            ImGui::TableSetupColumn("Protocolo",   ImGuiTableColumnFlags_WidthFixed,   85.0f);
-            ImGui::TableSetupColumn("Servicio",    ImGuiTableColumnFlags_WidthFixed,   95.0f);
-            ImGui::TableSetupColumn("IP Origen",   ImGuiTableColumnFlags_WidthStretch, 1.0f);
-            ImGui::TableSetupColumn("Pto. Orig.",  ImGuiTableColumnFlags_WidthFixed,   80.0f);
-            ImGui::TableSetupColumn("IP Destino",  ImGuiTableColumnFlags_WidthStretch, 1.0f);
-            ImGui::TableSetupColumn("Pto. Dst.",   ImGuiTableColumnFlags_WidthFixed,   80.0f);
-            ImGui::TableHeadersRow();
-
-            // ListClipper: solo renderiza filas visibles → O(visible) no O(n)
-            ImGuiListClipper clipper;
-            clipper.Begin((int)snap.size());
-            while (clipper.Step()) {
-                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
-                    const auto& m = snap[i];
-                    ImGui::TableNextRow();
-
-                    ImGui::TableSetColumnIndex(0);
-                    char label[16];
-                    snprintf(label, sizeof(label), "%d", i + 1);
-                    bool selected = (sel_paquete == i);
-                    if (ImGui::Selectable(label, selected,
-                            ImGuiSelectableFlags_SpanAllColumns,
-                            ImVec2(0, ImGui::GetTextLineHeight()))) {
-                        sel_paquete = i;
-                    }
-
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::TextColored(colorProtocolo(m.protocolo), "%s", m.protocolo.c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(m.servicio.c_str());
-                    ImGui::TableSetColumnIndex(3); ImGui::TextUnformatted(m.ip_origen.c_str());
-                    ImGui::TableSetColumnIndex(4); ImGui::Text("%d", m.puerto_origen);
-                    ImGui::TableSetColumnIndex(5); ImGui::TextUnformatted(m.ip_destino.c_str());
-                    ImGui::TableSetColumnIndex(6); ImGui::Text("%d", m.puerto_destino);
-                }
-            }
-
-            // Auto-scroll al último paquete durante captura
-            if (g_capturando && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 50.0f)
-                ImGui::SetScrollHereY(1.0f);
-
-            ImGui::EndTable();
-        }
-        ImGui::EndChild();
-
-        // Actualiza caché del paquete seleccionado solo cuando cambia la selección
-        if (sel_paquete != cached_idx && sel_paquete >= 0) {
-            lock_guard<mutex> lk(g_mtx);
-            if (sel_paquete < (int)g_meta.size()) {
-                cached_meta = g_meta[sel_paquete];
-                cached_raw  = g_raw[sel_paquete];
-                cached_idx  = sel_paquete;
-            }
+        ImGui::Text("Total de conexiones detectadas: %zu", n_paquetes);
+        if (g_capturando) {
+            ImGui::SameLine();
+            ImGui::TextColored({0.3f, 1.0f, 0.3f, 1.0f}, "(Analizando...)");
         }
 
-        // ── PANEL 2: Árbol de detalles ────────────────────────────────────────
-        ImGui::BeginChild("##detalles", {half_w, bot_h}, true);
-        ImGui::TextDisabled("Detalles del paquete");
+        ImGui::Spacing();
+
+        ImGui::BeginChild("##actividad", ImVec2(0, 0), true);
+        ImGui::Text("Actividad Reciente:");
         ImGui::Separator();
-        if (cached_idx >= 0)
-            renderDetalles(cached_meta, cached_raw);
-        else
-            ImGui::TextDisabled("Selecciona un paquete en la tabla.");
+
+        // Mostrar un flujo muy simple en lugar de una tabla
+        // Mostramos de lo más reciente a lo más viejo (ultimos 100)
+        int limite = 100;
+        int mostrados = 0;
+        for (int i = (int)snap.size() - 1; i >= 0 && mostrados < limite; i--) {
+            const auto& m = snap[i];
+            
+            // Texto amigable
+            string txt;
+            if (m.servicio != "---") {
+                txt = "Uso de " + m.servicio + " (" + m.protocolo + ") entre " + m.ip_origen + " y " + m.ip_destino;
+            } else {
+                txt = "Conexión " + m.protocolo + " entre " + m.ip_origen + " y " + m.ip_destino;
+            }
+
+            ImVec4 col = colorProtocolo(m.protocolo);
+            ImGui::Bullet(); ImGui::SameLine();
+            ImGui::TextColored(col, "%s", txt.c_str());
+            ImGui::SameLine();
+            ImGui::PushID(i);
+            if (ImGui::SmallButton("Hex")) {
+                lock_guard<mutex> lk(g_mtx);
+                if (i < (int)g_raw.size()) hex_raw_data = g_raw[i];
+                else hex_raw_data.clear();
+                open_hex_modal = true;
+            }
+            ImGui::PopID();
+            mostrados++;
+        }
+        if (snap.empty()) {
+            ImGui::TextDisabled("Aún no hay actividad...");
+        }
+
         ImGui::EndChild();
 
-        ImGui::SameLine();
+        if (open_hex_modal) {
+            ImGui::OpenPopup("Vista Hexadecimal");
+            open_hex_modal = false;
+        }
 
-        // ── PANEL 3: Vista hexadecimal ────────────────────────────────────────
-        ImGui::BeginChild("##hex_panel", {half_w, bot_h}, true);
-        ImGui::TextDisabled("Vista hexadecimal");
-        ImGui::Separator();
-        if (cached_idx >= 0)
-            renderHex(cached_raw);
-        else
-            ImGui::TextDisabled("Selecciona un paquete en la tabla.");
-        ImGui::EndChild();
+        if (ImGui::BeginPopupModal("Vista Hexadecimal", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            renderHex(hex_raw_data);
+            ImGui::Spacing();
+            if (ImGui::Button("Cerrar", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
 
+        if (open_filtros_modal) {
+            ImGui::OpenPopup("Configurar Filtros");
+            open_filtros_modal = false;
+        }
+
+        if (ImGui::BeginPopupModal("Configurar Filtros", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Filtro BPF Avanzado:");
+            ImGui::InputText("##filtro", filtro_buf, sizeof(filtro_buf));
+            ImGui::TextDisabled("Ejemplos: 'tcp port 443' o 'udp port 53'\nDeja en blanco para capturar todo.");
+            ImGui::Spacing();
+            if (ImGui::Button("Aceptar", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleVar();
         ImGui::End();
 
         // ── Renderizado OpenGL ────────────────────────────────────────────────
