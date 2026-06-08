@@ -289,7 +289,7 @@ int main() {
             ImGuiWindowFlags_NoDecoration    | ImGuiWindowFlags_NoMove         |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-        ImGui::TextUnformatted("MONITOR DE RED SIMPLE");
+        ImGui::TextUnformatted("Sniffer");
         ImGui::Separator();
         ImGui::Spacing();
         ImGui::Spacing();
@@ -363,7 +363,7 @@ int main() {
         ImGui::Spacing();
 
         ImGui::BeginChild("ListaPaquetes", ImVec2(0, -220), true);
-        if (ImGui::BeginTable("TablaPaquetes", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
+        if (ImGui::BeginTable("TablaPaquetes", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("No.", ImGuiTableColumnFlags_WidthFixed, 40.0f);
             ImGui::TableSetupColumn("Protocolo", ImGuiTableColumnFlags_WidthFixed, 70.0f);
@@ -371,7 +371,6 @@ int main() {
             ImGui::TableSetupColumn("IP Origen");
             ImGui::TableSetupColumn("IP Destino");
             ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-            ImGui::TableSetupColumn("Acción", ImGuiTableColumnFlags_WidthFixed, 50.0f);
             ImGui::TableHeadersRow();
 
             for (int i = 0; i < (int)snap.size(); i++) {
@@ -394,16 +393,6 @@ int main() {
                 ImGui::TableSetColumnIndex(3); ImGui::Text("%s:%d", m.ip_origen.c_str(), m.puerto_origen);
                 ImGui::TableSetColumnIndex(4); ImGui::Text("%s:%d", m.ip_destino.c_str(), m.puerto_destino);
                 ImGui::TableSetColumnIndex(5); ImGui::Text("%zu", m.raw_size);
-                
-                ImGui::TableSetColumnIndex(6);
-                ImGui::PushID(i);
-                if (ImGui::SmallButton("Hex")) {
-                    lock_guard<mutex> lk(g_mtx);
-                    if (i < (int)g_raw.size()) hex_raw_data = g_raw[i];
-                    else hex_raw_data.clear();
-                    open_hex_modal = true;
-                }
-                ImGui::PopID();
             }
             ImGui::EndTable();
         }
@@ -438,6 +427,14 @@ int main() {
                     ImGui::TextColored({0.3f, 1.0f, 0.3f, 1.0f}, "Servicio de aplicación detectado: %s", cached_meta.servicio.c_str());
                 }
                 ImGui::TreePop();
+            }
+            
+            ImGui::Spacing();
+            if (ImGui::Button("Ver datos crudos (Hexadecimal)", ImVec2(250, 30))) {
+                lock_guard<mutex> lk(g_mtx);
+                if (sel_paquete < (int)g_raw.size()) hex_raw_data = g_raw[sel_paquete];
+                else hex_raw_data.clear();
+                open_hex_modal = true;
             }
         } else {
             ImGui::TextDisabled("\nSelecciona un paquete en la tabla de arriba para ver sus detalles aquí.");
