@@ -314,7 +314,7 @@ int main() {
             
             ImGui::Spacing(); ImGui::Spacing(); ImGui::Spacing();
             ImGui::SetCursorPosX((600 - 200) * 0.5f);
-            if (ImGui::Button("[ ▶ ] Comenzar a Sniffear", ImVec2(200, 50))) {
+            if (ImGui::Button("Comenzar a Sniffear", ImVec2(200, 50))) {
                 show_welcome = false;
             }
             ImGui::End();
@@ -370,7 +370,7 @@ int main() {
             if (!g_capturando) {
                 ImGui::PushStyleColor(ImGuiCol_Button,        {0.15f, 0.65f, 0.15f, 1.0f});
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f, 0.85f, 0.20f, 1.0f});
-                if (ImGui::Button("[ ▶ ] INICIAR CAPTURA", ImVec2(200, 50)) && !iface_names.empty()) {
+                if (ImGui::Button("INICIAR CAPTURA", ImVec2(200, 50)) && !iface_names.empty()) {
                     sel_paquete = -1;
                     cached_idx  = -1;
                     exportado   = false;
@@ -383,7 +383,7 @@ int main() {
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Button,        {0.85f, 0.15f, 0.15f, 1.0f});
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {1.00f, 0.20f, 0.20f, 1.0f});
-                if (ImGui::Button("[ ■ ] DETENER CAPTURA", ImVec2(200, 50))) {
+                if (ImGui::Button("DETENER CAPTURA", ImVec2(200, 50))) {
                     if (g_handle) pcap_breakloop(g_handle);
                 }
                 ImGui::PopStyleColor(2);
