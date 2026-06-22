@@ -579,7 +579,7 @@ int main() {
     //Limpieza al cerrar
     if (g_capturando && g_handle) pcap_breakloop(g_handle); //Detiene captura
     if (hilo_cap.joinable()) hilo_cap.join();   //Espera a que termine el hilo evitando crashes, cerrar hilos, etc.
-    
+
     //Destruimos todo correctamente
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
