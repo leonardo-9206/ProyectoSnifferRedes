@@ -353,70 +353,72 @@ int main() {
             }
             ImGui::End();
         } else {
-            //Main menu bar
+            //Barra de menu superior (Archivo / Opciones), se dibuja en la parte de arriba de la ventana
             if (ImGui::BeginMainMenuBar()) {
-                if (ImGui::BeginMenu("Archivo")) {
-                    if (ImGui::MenuItem("Guardar Reporte CSV")) {
-                        if (exportarCSV(csv_path)) exportado = true;
+                if (ImGui::BeginMenu("Archivo")) { //menu desplegable "Archivo"
+                    if (ImGui::MenuItem("Guardar Reporte CSV")) { //si el usuario da click en esta opcion
+                        if (exportarCSV(csv_path)) exportado = true; //exportamos y marcamos bandera de exito
                     }
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Opciones")) {
+                if (ImGui::BeginMenu("Opciones")) { //menu desplegable "Opciones"
                     if (ImGui::MenuItem("Configurar Filtros BPF")) {
-                        open_filtros_modal = true;
+                        open_filtros_modal = true; //pedimos que se abra la ventana modal de filtros
                     }
                     ImGui::EndMenu();
                 }
                 ImGui::EndMainMenuBar();
             }
 
-            ImGui::SetNextWindowPos({0, ImGui::GetFrameHeight()});
-            ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y - ImGui::GetFrameHeight()});
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
-            ImGui::Begin("##root", nullptr,
+            //Ventana raiz: ocupa toda la pantalla justo debajo de la barra de menu
+            ImGui::SetNextWindowPos({0, ImGui::GetFrameHeight()}); //posicion: pegada arriba (debajo del menu)
+            ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y - ImGui::GetFrameHeight()}); //tamaño: toda la pantalla
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20)); //margen interno de 20px
+            ImGui::Begin("##root", nullptr, //ventana fija, sin bordes ni titulo, no se mueve ni se guarda
                 ImGuiWindowFlags_NoDecoration    | ImGuiWindowFlags_NoMove         |
                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-            ImGui::TextUnformatted("Sniffer");
+            ImGui::TextUnformatted("Sniffer"); //titulo de la seccion
             ImGui::Separator();
             ImGui::Spacing();
             
-            if (exportado) {
+            if (exportado) { //si ya se exporto un CSV, mostramos un mensaje verde de confirmacion
                 ImGui::TextColored({0.3f, 1.0f, 0.3f, 1.0f}, "Reporte guardado exitosamente en %s", csv_path);
                 ImGui::Spacing();
             }
 
             ImGui::Text("1. Selecciona tu conexión a Internet:");
-            ImGui::SetNextItemWidth(400);
-            if (!iface_descs.empty()) {
-                vector<const char*> ptrs;
+            ImGui::SetNextItemWidth(400); //ancho del menu desplegable
+            if (!iface_descs.empty()) { //hay interfaces disponibles?
+                vector<const char*> ptrs; //ImGui::Combo necesita un arreglo de const char*, lo armamos a partir de los strings
                 for (auto& s : iface_descs) ptrs.push_back(s.c_str());
-                if (g_capturando) ImGui::BeginDisabled();
-                ImGui::Combo("##iface", &sel_iface, ptrs.data(), (int)ptrs.size());
+                if (g_capturando) ImGui::BeginDisabled(); //mientras capturamos, bloqueamos el cambio de interfaz
+                ImGui::Combo("##iface", &sel_iface, ptrs.data(), (int)ptrs.size()); //lista desplegable de interfaces
                 if (g_capturando) ImGui::EndDisabled();
             } else {
-                ImGui::TextColored({1, 0.4f, 0.4f, 1}, "No se encontraron interfaces.");
+                ImGui::TextColored({1, 0.4f, 0.4f, 1}, "No se encontraron interfaces."); //sin interfaces (¿faltan permisos/Npcap?)
             }
 
             ImGui::Spacing();
             ImGui::Spacing();
 
+            //Boton dinamico: si NO estamos capturando mostramos "INICIAR" (verde); si SI, mostramos "DETENER" (rojo)
             if (!g_capturando) {
-                ImGui::PushStyleColor(ImGuiCol_Button,        {0.15f, 0.65f, 0.15f, 1.0f});
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f, 0.85f, 0.20f, 1.0f});
+                ImGui::PushStyleColor(ImGuiCol_Button,        {0.15f, 0.65f, 0.15f, 1.0f}); //color verde del boton
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f, 0.85f, 0.20f, 1.0f}); //color al pasar el mouse
                 if (ImGui::Button("INICIAR CAPTURA", ImVec2(200, 50)) && !iface_names.empty()) {
-                    sel_paquete = -1;
-                    cached_idx  = -1;
-                    exportado   = false;
-                    { lock_guard<mutex> lk(g_mtx); g_meta.clear(); g_raw.clear(); }
-                    g_capturando = true;
-                    if (hilo_cap.joinable()) hilo_cap.join();
+                    sel_paquete = -1; //reiniciamos la seleccion
+                    cached_idx  = -1; //y el cache de detalles
+                    exportado   = false; //ocultamos el mensaje de "exportado"
+                    { lock_guard<mutex> lk(g_mtx); g_meta.clear(); g_raw.clear(); } //limpiamos capturas anteriores (con candado)
+                    g_capturando = true; //activamos la bandera de captura
+                    if (hilo_cap.joinable()) hilo_cap.join(); //por seguridad, esperamos a que el hilo previo cierre
                     hilo_cap = thread(runCapture, iface_names[sel_iface], string(filtro_buf));
                     //creamos un hilo nuevo, ejecutando runCapture mientras q la GUI sigue funcionando
                 }
-                ImGui::PopStyleColor(2);
+                ImGui::PopStyleColor(2); //quitamos los 2 colores que metimos (Button y ButtonHovered)
             } else {
-                ImGui::PushStyleColor(ImGuiCol_Button,        {0.85f, 0.15f, 0.15f, 1.0f});
+                ImGui::PushStyleColor(ImGuiCol_Button,        {0.85f, 0.15f, 0.15f, 1.0f}); //color rojo del boton
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {1.00f, 0.20f, 0.20f, 1.0f});
                 if (ImGui::Button("DETENER CAPTURA", ImVec2(200, 50))) {
                     if (g_handle) pcap_breakloop(g_handle); //salir del pcap_loop, terminando runCapture()
@@ -428,131 +430,147 @@ int main() {
             ImGui::Separator();
             ImGui::Spacing();
 
-            size_t n_paquetes;
-            vector<PaqueteMeta> snap;
-            { lock_guard<mutex> lk(g_mtx); snap = g_meta; n_paquetes = g_meta.size(); }
+            //Tomamos una "foto" (snapshot) de los metadatos para dibujar la tabla sin tener el candado tomado todo el frame
+            size_t n_paquetes; 
+            vector<PaqueteMeta> snap; //copia local de g_meta
+            { lock_guard<mutex> lk(g_mtx); snap = g_meta; n_paquetes = g_meta.size(); } //copiamos rapido y soltamos el candado
 
-            ImGui::Text("Total de conexiones detectadas: %zu", n_paquetes);
-            if (g_capturando) {
+            ImGui::Text("Total de conexiones detectadas: %zu", n_paquetes); //contador de paquetes
+            if (g_capturando) { //si esta capturando, mostramos "(Analizando...)" al lado
                 ImGui::SameLine();
                 ImGui::TextColored({0.3f, 1.0f, 0.3f, 1.0f}, "(Analizando...)");
             }
-            ImGui::SameLine(ImGui::GetWindowWidth() - 150);
-            ImGui::Checkbox("Auto-Scroll", &auto_scroll);
+            ImGui::SameLine(ImGui::GetWindowWidth() - 150); //movemos el cursor a la derecha
+            ImGui::Checkbox("Auto-Scroll", &auto_scroll); //casilla para activar/desactivar el scroll automatico
 
             ImGui::Spacing();
 
-            ImGui::BeginChild("ListaPaquetes", ImVec2(0, -220), true);
+            //Contenedor con scroll para la tabla de paquetes (la altura -220 deja 220px abajo para el panel de detalles)
+            ImGui::BeginChild("ListaPaquetes", ImVec2(0, -220), true); 
+            //Tabla de 6 columnas con bordes, fondo por fila, scroll vertical y columnas redimensionables
             if (ImGui::BeginTable("TablaPaquetes", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
-                ImGui::TableSetupScrollFreeze(0, 1);
-                ImGui::TableSetupColumn("No.", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+                ImGui::TableSetupScrollFreeze(0, 1);  //congela la fila de encabezados al hacer scroll
+                ImGui::TableSetupColumn("No.", ImGuiTableColumnFlags_WidthFixed, 40.0f); //columnas con ancho fijo
                 ImGui::TableSetupColumn("Protocolo", ImGuiTableColumnFlags_WidthFixed, 70.0f);
                 ImGui::TableSetupColumn("Servicio", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableSetupColumn("IP Origen");
+                ImGui::TableSetupColumn("IP Origen"); //sin ancho fijo -> se estira
                 ImGui::TableSetupColumn("IP Destino");
                 ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                 ImGui::TableHeadersRow();
 
-                for (int i = 0; i < (int)snap.size(); i++) {
+                for (int i = 0; i < (int)snap.size(); i++) { //recorremos cada paquete de la foto
                     const auto& m = snap[i];
                     
-                    ImVec4 col = colorProtocolo(m.protocolo);
+                    ImVec4 col = colorProtocolo(m.protocolo);//color segun el protocolo
+                    //pintamos el fondo de la fila con ese color pero muy transparente (alpha 0.15)
                     ImU32 row_bg_color = ImGui::GetColorU32(ImVec4(col.x, col.y, col.z, 0.15f));
-                    ImGui::TableNextRow();
+                    ImGui::TableNextRow(); //avanzamos a una nueva fila
                     ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, row_bg_color);
                     
-                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TableSetColumnIndex(0); //columna 0: numero de paquete
                     char label[32];
                     snprintf(label, sizeof(label), "%d", i + 1);
-                    bool is_selected = (sel_paquete == i);
+                    bool is_selected = (sel_paquete == i); //esta fila es la seleccionada?
+                    //Selectable que abarca toda la fila; al hacer click devuelve true
                     if (ImGui::Selectable(label, is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                        //al hacer click guarda los detalles de ese paquete 
+                        //al hacer click guarda los detalles de ese paquete
                         sel_paquete = i;
                         cached_idx = i;
-                        cached_meta = m;
+                        cached_meta = m; //guardamos una copia para el panel de detalles
                     }
 
-                    ImGui::TableSetColumnIndex(1); ImGui::TextColored(col, "%s", m.protocolo.c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", m.servicio.c_str());
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s:%d", m.ip_origen.c_str(), m.puerto_origen);
-                    ImGui::TableSetColumnIndex(4); ImGui::Text("%s:%d", m.ip_destino.c_str(), m.puerto_destino);
+                    //Rellenamos el resto de columnas de esta fila
+                    ImGui::TableSetColumnIndex(1); ImGui::TextColored(col, "%s", m.protocolo.c_str()); //protocolo coloreado
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", m.servicio.c_str()); //servicio (HTTP, DNS, etc.)
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s:%d", m.ip_origen.c_str(), m.puerto_origen); //ip:puerto origen
+                    ImGui::TableSetColumnIndex(4); ImGui::Text("%s:%d", m.ip_destino.c_str(), m.puerto_destino); //tamaño en bytes
                     ImGui::TableSetColumnIndex(5); ImGui::Text("%zu", m.raw_size);
                 }
                 
+                //Auto-scroll: si la casilla esta activa y ya estamos hasta abajo, seguimos pegados al final
                 if (auto_scroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
                     ImGui::SetScrollHereY(1.0f);
                 }
                 
                 ImGui::EndTable();
             }
-            if (snap.empty()) {
+            if (snap.empty()) { //si todavia no hay paquetes, mostramos un texto de ayuda
                 ImGui::TextDisabled("Aún no hay actividad. Dale click a Iniciar Monitor...");
             }
             ImGui::EndChild();
 
-            //VISTA DE ARBOL DE DETALLES
-            ImGui::BeginChild("DetallesPaquete", ImVec2(0, 0), true);
+            //VISTA DE ARBOL DE DETALLES (panel inferior que desglosa el paquete seleccionado por capas del modelo OSI)
+            ImGui::BeginChild("DetallesPaquete", ImVec2(0, 0), true); //ocupa el resto del espacio disponible
             ImGui::TextColored({0.4f, 0.8f, 1.0f, 1.0f}, "Análisis Detallado del Paquete Seleccionado");
             ImGui::Separator();
             ImGui::Spacing();
             
+            //Solo mostramos detalles si hay un paquete valido seleccionado y coincide con el cache
             if (sel_paquete >= 0 && sel_paquete == cached_idx) {
-                if (ImGui::TreeNodeEx("Capa de Enlace (Ethernet)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                 //Nodo desplegable: Capa de Enlace (Ethernet)
+                if (ImGui::TreeNodeEx("Capa de Enlace (Ethernet)", ImGuiTreeNodeFlags_DefaultOpen)) { //DefaultOpen = abierto por defecto
                     ImGui::Text("Tamaño total capturado en la trama: %zu bytes", cached_meta.raw_size);
                     ImGui::TreePop();
                 }
+                //Nodo desplegable: Capa de Red (IPv4) -> direcciones IP
                 if (ImGui::TreeNodeEx("Capa de Red (IPv4)", ImGuiTreeNodeFlags_DefaultOpen)) {
                     ImGui::Text("Dirección IP de Origen: %s", cached_meta.ip_origen.c_str());
                     ImGui::Text("Dirección IP de Destino: %s", cached_meta.ip_destino.c_str());
                     ImGui::TreePop();
                 }
+                //Nodo desplegable: Capa de Transporte -> protocolo, puertos y servicio
                 if (ImGui::TreeNodeEx("Capa de Transporte", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    ImVec4 col = colorProtocolo(cached_meta.protocolo);
+                    ImVec4 col = colorProtocolo(cached_meta.protocolo); //color del protocolo
                     ImGui::Text("Protocolo: "); ImGui::SameLine(); ImGui::TextColored(col, "%s", cached_meta.protocolo.c_str());
                     ImGui::Text("Puerto de Origen: %d", cached_meta.puerto_origen);
                     ImGui::Text("Puerto de Destino: %d", cached_meta.puerto_destino);
                     
-                    if (cached_meta.servicio != "---") {
+                    if (cached_meta.servicio != "---") { //si identificamos un servicio conocido, lo resaltamos en verde
                         ImGui::TextColored({0.3f, 1.0f, 0.3f, 1.0f}, "Servicio de aplicación detectado: %s", cached_meta.servicio.c_str());
                     }
                     ImGui::TreePop();
                 }
                 
                 ImGui::Spacing();
+                //Boton que abre el visor hexadecimal con los bytes crudos del paquete
                 if (ImGui::Button("Ver datos crudos (Hexadecimal)", ImVec2(250, 30))) {
-                    lock_guard<mutex> lk(g_mtx);
-                    if (sel_paquete < (int)g_raw.size()) hex_raw_data = g_raw[sel_paquete];
-                    else hex_raw_data.clear();
-                    open_hex_modal = true;
+                    lock_guard<mutex> lk(g_mtx); //candado: g_raw lo escribe el hilo de captura
+                    if (sel_paquete < (int)g_raw.size()) hex_raw_data = g_raw[sel_paquete]; //copiamos los bytes de ese paquete
+                    else hex_raw_data.clear(); //por seguridad, si el indice ya no existe
+                    open_hex_modal = true; //pedimos abrir la ventana modal hex
                 }
             } else {
                 ImGui::TextDisabled("\nSelecciona un paquete en la tabla de arriba para ver sus detalles aquí.");
             }
             ImGui::EndChild();
 
+            //ImGui requiere que OpenPopup se llame una vez; usamos la bandera para dispararlo y luego la bajamos
             if (open_hex_modal) {
                 ImGui::OpenPopup("Vista Hexadecimal");
                 open_hex_modal = false;
             }
 
+            //Ventana modal con el volcado hexadecimal del paquete
             if (ImGui::BeginPopupModal("Vista Hexadecimal", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
                 renderHex(hex_raw_data);    //Al presionar Vista Hexadecimal podemos ver los datos en crudo
                 ImGui::Spacing();
                 if (ImGui::Button("Cerrar", ImVec2(120, 0))) {
-                    ImGui::CloseCurrentPopup();
+                    ImGui::CloseCurrentPopup(); //cerramos el modal
                 }
                 ImGui::EndPopup();
             }
 
-            if (open_filtros_modal) {
+            //Mismo patron para abrir el modal de filtros
+            if (open_filtros_modal) { 
                 ImGui::OpenPopup("Configurar Filtros");
                 open_filtros_modal = false;
             }
 
+            //Ventana modal para escribir el filtro BPF que se aplicara en la proxima captura
             if (ImGui::BeginPopupModal("Configurar Filtros", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
                 //nos permite escribir los filtros
                 ImGui::Text("Filtro BPF Avanzado:");
-                ImGui::InputText("##filtro", filtro_buf, sizeof(filtro_buf));
+                ImGui::InputText("##filtro", filtro_buf, sizeof(filtro_buf)); //caja de texto que guarda lo escrito en filtro_buf
                 ImGui::TextDisabled("Ejemplos: 'tcp port 443' o 'udp port 53'\nDeja en blanco para capturar todo.");
                 ImGui::Spacing();
                 if (ImGui::Button("Aceptar", ImVec2(120, 0))) {
@@ -561,30 +579,30 @@ int main() {
                 ImGui::EndPopup();
             }
 
-            ImGui::PopStyleVar();
-            ImGui::End();
+            ImGui::PopStyleVar(); //quitamos el WindowPadding que pusimos para la ventana raiz
+            ImGui::End(); //cerramos la ventana raiz "##root"
         }
 
-        //Renderizado OpenGL
-        ImGui::Render();    //generar interfaz
+        //Renderizado OpenGL: convertimos lo que describimos con ImGui en pixeles reales en pantalla
+        ImGui::Render();    //generar interfaz (calcula los vertices a dibujar)
         int fb_w, fb_h;
-        glfwGetFramebufferSize(window, &fb_w, &fb_h);
+        glfwGetFramebufferSize(window, &fb_w, &fb_h); //tamaño real del area de dibujo (en pixeles)
         glViewport(0, 0, fb_w, fb_h);   //definir area de dibujo
-        glClearColor(0.10f, 0.10f, 0.12f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);   //limpiar pantalla
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData()); //dibuja todo
-        glfwSwapBuffers(window);    //mostrar el frame
+        glClearColor(0.10f, 0.10f, 0.12f, 1.0f); //color de fondo (gris muy oscuro)
+        glClear(GL_COLOR_BUFFER_BIT);   //limpiar pantalla con ese color de fondo
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData()); //dibuja todo la interfaz
+        glfwSwapBuffers(window);    //mostrar el frame (intercambia el buffer trasero con el visible)
     }
 
-    //Limpieza al cerrar
-    if (g_capturando && g_handle) pcap_breakloop(g_handle); //Detiene captura
+    //Limpieza al cerrar (cuando el usuario cierra la ventana se sale del while y llegamos aqui)
+    if (g_capturando && g_handle) pcap_breakloop(g_handle); //Detiene la captura si seguia activa
     if (hilo_cap.joinable()) hilo_cap.join();   //Espera a que termine el hilo evitando crashes, cerrar hilos, etc.
 
-    //Destruimos todo correctamente
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-    glfwDestroyWindow(window);
-    glfwTerminate();
-    return 0;
+    //Destruimos todo correctamente para no dejar memoria ni recursos colgados
+    ImGui_ImplOpenGL3_Shutdown(); //cierra el backend de OpenGL de ImGui
+    ImGui_ImplGlfw_Shutdown();    //cierra el backend de GLFW de ImGui
+    ImGui::DestroyContext();      //libera el contexto de ImGui
+    glfwDestroyWindow(window);    //destruye la ventana
+    glfwTerminate();              //apaga GLFW
+    return 0;                     //fin del programa
 }
